@@ -42,11 +42,13 @@ ls         List local files
 mkdir      Create a directory on disk
 mount      Mount a disk image
 move       Move files from one volume to another
-put        Copy local file to disk
+prefix     Change volume path
+put        Copy local file to disk (with optional target dir)
 quarantine Like report, but allow moving dupes to a backup folder
 quit       Leave this place
 rename     Rename a file on the disk
 report     Run a report
+search     Run a search
 target     Select mounted volume as default
 unlock     Unlock file on the disk
 unmount    unmount disk image
@@ -81,7 +83,7 @@ Command-line flags:
   -csv
     	Output data to CSV format
   -datastore string
-    	Database of disk fingerprints for checking (default "/Users/nnnnn/DiskM8/fingerprints")
+    	Database of disk fingerprints for checking (default "/home/april/DiskM8/fingerprints")
   -dir
     	Directory specified disk (needs -disk)
   -dir-create string
@@ -142,26 +144,36 @@ Command-line flags:
     	Run whole disk dupe report
   -with-disk string
     	Perform disk operation (-file-extract,-file-put,-file-delete)
+  -with-path string
+    	Target path for disk operation (-file-extract,-file-put,-file-delete)
 ```
-Getting Started
+
+## Getting Started
 
 Ingest your disk collection, so diskm8 can report on them:
 
-diskm8 -ingest "C:\Users\myname\LotsOfDisks"
-Simple Reports
+```diskm8 -ingest "C:\Users\myname\LotsOfDisks"```
+
+### Simple Reports
 
 Find Whole Disk duplicates:
 
-diskm8 -whole-dupes 
+```diskm8 -whole-dupes```
+
 Find Active Sectors duplicates (inactive sectors can be different):
 
-diskm8 -as-dupes
+```diskm8 -as-dupes```
+
 Find Duplicate files across disks:
 
-diskm8 -file-dupes
-Limiting reports to subdirectories
+```diskm8 -file-dupes```
+
+### Limiting reports to subdirectories
 
 Find Active Sector duplicates but only under a folder:
 
-diskm8 -as-dupes -select "C:\Users\myname\LotsOfDisks\Operating Systems"
-```
+```diskm8 -as-dupes -select "C:\Users\myname\LotsOfDisks\Operating Systems"```
+
+### Putting a file onto a disk in a particular path
+
+```diskm8 -with-disk prodos_basic.dsk -with-path practice -file-put start#0x0801.BAS```

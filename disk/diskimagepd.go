@@ -2,7 +2,6 @@ package disk
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -75,12 +74,31 @@ func (fd *VDH) GetNameLength() int {
 	return int(fd.Data[0] & 0xf)
 }
 
+func (fd *VDH) SetNameLength(l int) {
+	fd.Data[0] = (fd.Data[0] & 0xf0) | byte(l&0x0f)
+}
+
 func (fd *VDH) GetStorageType() ProDOSStorageType {
 	return ProDOSStorageType((fd.Data[0]) >> 4)
 }
 
 func (fd *VDH) GetDirName() string {
 	return fd.GetVolumeName()
+}
+
+func (fd *VDH) SetVolumeName(s string) {
+	if len(s) > 15 {
+		s = s[:15]
+	}
+	l := len(s)
+	for i := 0; i < 15; i++ {
+		if i < l {
+			fd.Data[1+i] = byte(s[i])
+		} else {
+			fd.Data[1+i] = 0x00
+		}
+	}
+	fd.SetNameLength(l)
 }
 
 func (fd *VDH) GetVolumeName() string {
@@ -193,9 +211,9 @@ func (fd *VDH) Publish(dsk *DSKWrapper) error {
 	for i, v := range fd.Data {
 		bd[fd.blockoffset+i] = v
 	}
-	fmt.Printf("Writing dir header at block %d\n", fd.blockid)
+	//fmt.Printf("Writing dir header at block %d\n", fd.blockid)
 
-	fmt.Printf("Data=%v\n", bd)
+	//fmt.Printf("Data=%v\n", bd)
 
 	return dsk.PRODOSWrite(fd.blockid, bd)
 }
@@ -324,6 +342,9 @@ func (vb ProDOSVolumeBitmap) IsBlockFree(b int) bool {
 }
 
 func (vb ProDOSVolumeBitmap) SetBlockFree(b int, free bool) {
+
+	//log.Printf("Freeing block %d", b)
+
 	bidx := b / 8
 	bit := 7 - (b % 8)
 	setmask := byte(1 << uint(bit))
@@ -881,6 +902,20 @@ func (d *DSKWrapper) PRODOSGetVDH(b int) (*VDH, error) {
 
 }
 
+func (d *DSKWrapper) PRODOSSetVDH(b int, vdh *VDH) error {
+
+	data, e := d.PRODOSGetBlock(b)
+	if e != nil {
+		return e
+	}
+
+	for i, v := range vdh.Data {
+		data[4+i] = v
+	}
+
+	return d.PRODOSWrite(b, data)
+}
+
 func (d *DSKWrapper) PRODOSGetCatalogPathed(start int, path string, pattern string) (*VDH, []ProDOSFileDescriptor, error) {
 
 	path = strings.Trim(path, "/")
@@ -1390,10 +1425,16 @@ func (dsk *DSKWrapper) PRODOSDeleteFile(path string, name string) error {
 			return err
 		}
 
+		maxBlocks := 1600
+		if len(dsk.Data) == STD_DISK_BYTES {
+			maxBlocks = 280
+		}
+
 		i := 0
-		b := int(ib[2*i+0]) + 256*int(ib[2*i+1])
-		for i < 256 && b != 0 {
-			b = int(ib[2*i+0]) + 256*int(ib[2*i+1])
+		b := int(ib[i]) + 256*int(ib[256+i])
+		for i < 256 && b != 0 && b <= maxBlocks {
+			removeBlocks = append(removeBlocks, b)
+			b = int(ib[i]) + 256*int(ib[256+i])
 			i++
 		}
 	}
@@ -1510,7 +1551,7 @@ func (dsk *DSKWrapper) PRODOSWriteFile(path string, name string, kind ProDOSFile
 
 	fd.Publish(dsk)
 
-	dvdh.SetFileCount(vdh.GetFileCount() + 1)
+	dvdh.SetFileCount(dvdh.GetFileCount() + 1)
 	dvdh.Publish(dsk)
 
 	err = dsk.PRODOSMarkBlocks(freeBlocks, false)
@@ -1573,8 +1614,8 @@ func (dsk *DSKWrapper) PRODOSWriteSaplingBlocks(indexBlock int, dataBlocks []int
 	ib := make([]byte, 512)
 	for i, blocknum := range dataBlocks {
 		// index the block
-		ib[i*2+0] = byte(blocknum & 0xff)
-		ib[i*2+1] = byte(blocknum / 0x100)
+		ib[0+i] = byte(blocknum & 0xff)
+		ib[256+i] = byte(blocknum / 0x100)
 
 		// data offset...
 		ptr := 512 * i
