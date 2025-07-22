@@ -100,7 +100,7 @@ func (fd *FileDescriptor) Publish(dsk *DSKWrapper) error {
 }
 
 func (fd *FileDescriptor) IsUnused() bool {
-	return fd.Data[0] == 0xff || fd.Type().String() == "Unknown" || fd.TotalSectors() == 0
+	return fd.Data[0] == 0xff || fd.Data[0] == 0x00 || fd.Type().String() == "Unknown" || fd.TotalSectors() == 0
 }
 
 func (fd *FileDescriptor) GetTrackSectorListStart() (int, int) {
@@ -257,7 +257,11 @@ func (fd *VTOC) GetTrackOrder() int {
 }
 
 func (fd *VTOC) BytesPerSector() int {
-	return int(fd.Data[0x36]) + 256*int(fd.Data[0x37])
+	size := int(fd.Data[0x36]) + 256*int(fd.Data[0x37])
+	if size < 256 {
+		size = 256
+	}
+	return size
 }
 
 func (fd *VTOC) IsTSFree(t, s int) bool {
@@ -813,6 +817,7 @@ func (d *DSKWrapper) AppleDOSNextFreeCatalogEntry(name string) (*FileDescriptor,
 	data := d.Read()
 
 	for e == nil && count < 105 {
+		fmt.Printf("AppleDOSNextFreeCatalogEntry: checking entry %d\n", count)
 		slot := count % 7
 		pos := 0x0b + 35*slot
 
@@ -820,8 +825,10 @@ func (d *DSKWrapper) AppleDOSNextFreeCatalogEntry(name string) (*FileDescriptor,
 		fd.SetData(data[pos:pos+35], ct, cs, pos)
 
 		if fd.IsUnused() {
+		    fmt.Printf("Is unused\n")
 			return &fd, nil
 		} else if name != "" && strings.ToLower(fd.NameUnadorned()) == strings.ToLower(name) {
+			fmt.Printf("Name match found\n")
 			return &fd, nil
 		}
 		count++
@@ -905,32 +912,31 @@ func (dsk *DSKWrapper) AppleDOSWriteFile(name string, kind FileType, data []byte
 
 	fmt.Printf("Writing file with type %s\n", kind.Ext())
 
-	if kind == FileTypeBIN {
+	if kind & FileTypeBIN != 0 {
 		l := len(data)
 		fmt.Printf("Length is %d\n", l)
 		header := []byte{byte(l % 256), byte(l / 256)}
 		data = append(header, data...)
 	}
 
-	if kind != FileTypeTXT {
+	if kind & FileTypeTXT == 0 {
 		header := []byte{byte(loadAddr % 256), byte(loadAddr / 256)}
 		data = append(header, data...)
 	}
 
-	// 1st: check we have sufficient space...
-	tsBlocks, dataBlocks, err := dsk.AppleDOSGetFreeSectors(len(data))
-	if err != nil {
-		return err
-	}
-
+	// try get catalog entry - delete existing if match found
 	fd, err := dsk.AppleDOSNamedCatalogEntry(name)
-	//fmt.Println("FD=", fd)
 	if err == nil {
 		if kind != fd.Type() {
 			return errors.New("File type mismatch")
 		} else {
 			// need to delete this file...
-			err = dsk.AppleDOSDeleteFile(name)
+			err = dsk.AppleDOSRemoveFile(fd)
+			if err != nil {
+				return err
+			}
+			// reread vtoc here
+			vtoc, err = dsk.AppleDOSGetVTOC()
 			if err != nil {
 				return err
 			}
@@ -942,9 +948,15 @@ func (dsk *DSKWrapper) AppleDOSWriteFile(name string, kind FileType, data []byte
 		}
 	}
 
-	// 2nd: check we can get a free catalog entry
-	sectorCount := len(dataBlocks)
+	// 1st: check we have sufficient space...
+	tsBlocks, dataBlocks, err := dsk.AppleDOSGetFreeSectors(len(data))
+	if err != nil {
+		return err
+	}
 
+	// 2nd: check we can get a free catalog entry
+	sectorCount := len(dataBlocks) + len(tsBlocks)
+	
 	// 3rd: Write the datablocks
 	var block int = 0
 	for len(data) > 0 {
@@ -1025,6 +1037,8 @@ func (dsk *DSKWrapper) AppleDOSWriteFile(name string, kind FileType, data []byte
 	fd.SetTotalSectors(sectorCount)
 	fd.Publish(dsk)
 
+	fmt.Printf("Added file %s (kind %d)\n", name, kind)
+
 	return nil
 
 }
@@ -1057,6 +1071,8 @@ func (d *DSKWrapper) AppleDOSRemoveFile(fd *FileDescriptor) error {
 	for _, pair := range tsBlocks {
 		vtoc.SetTSFree(pair[0], pair[1], true)
 	}
+
+	vtoc.Publish(d)
 
 	fd.Data[0x00] = 0xff
 	fd.SetName("")

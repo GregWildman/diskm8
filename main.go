@@ -13,25 +13,19 @@ through as time goes by.
 */
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
-
-	"flag"
-
-	"os"
+	"strings"
+	"time"
 
 	"github.com/paleotronic/diskm8/disk"
 	"github.com/paleotronic/diskm8/loggy"
-
-	"runtime"
-
-	"strings"
-
-	"time"
-
 	"github.com/paleotronic/diskm8/panic"
 )
 
@@ -95,7 +89,7 @@ var shell = flag.Bool("shell", false, "Start interactive mode")
 var shellBatch = flag.String("shell-batch", "", "Execute shell command(s) from file and exit")
 var withDisk = flag.String("with-disk", "", "Perform disk operation (-file-extract,-file-put,-file-delete)")
 var withPath = flag.String("with-path", "", "Target path for disk operation (-file-extract,-file-put,-file-delete)")
-var fileExtract = flag.String("file-extract", "", "File to delete from disk (-with-disk)")
+var fileExtract = flag.String("file-extract", "", "File to extract from disk (-with-disk)")
 var filePut = flag.String("file-put", "", "File to put on disk (-with-disk)")
 var fileDelete = flag.String("file-delete", "", "File to delete (-with-disk)")
 var fileMkdir = flag.String("dir-create", "", "Directory to create (-with-disk)")
@@ -106,11 +100,11 @@ func main() {
 
 	runtime.GOMAXPROCS(8)
 
-	banner()
-
-	//l.Default.Level = l.LevelCrit
-
 	flag.Parse()
+
+	if *withDisk == "" && *shellBatch == "" {
+		banner()
+	}
 
 	var filterpath []string
 
